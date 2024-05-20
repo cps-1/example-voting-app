@@ -1,0 +1,99 @@
+schemaVersion: 2.1.0
+metadata:
+  name: example-voting-app
+components:
+  - name: tools
+    container:
+      image: ghcr.io/cps-1/devimage:20240520
+      endpoints:
+        - exposure: public
+          name: vote
+          targetPort: 5000
+        - exposure: public
+          name: results
+          targetPort: 4000
+  - name: db
+    container:
+      image: postgres:15-alpine
+      memoryLimit: 512Mi
+      env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+      endpoints:
+        - name: postgres
+          targetPort: 5432
+          exposure: none
+      volumeMounts:
+        - name: db-data
+          path: /var/lib/postgresql/data
+  - name: db-data
+    volume:
+      size: 2Gi
+  - name: redis
+    container:
+      image: redis:alpine
+      memoryLimit: 512Mi
+      endpoints:
+        - name: redis
+          targetPort: 6379
+          exposure: none
+commands:
+  - id: install-vote-dependencies
+    exec:
+      label: "Install vote dependencies"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/vote
+      commandLine: "pip install --no-cache-dir -r requirements.txt"
+      group:
+        kind: build
+  - id: install-result-dependencies
+    exec:
+      label: "Install result dependencies"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/result
+      commandLine: "npm ci"
+      group:
+        kind: build
+  - id: install-worker-dependencies
+    exec:
+      label: "Install worker dependencies"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/worker
+      commandLine: "dotnet restore"
+      group:
+        kind: build
+  - id: run-worker
+    exec:
+      label: "Run worker"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/worker
+      commandLine: "dotnet run"
+      group:
+        kind: run
+  - id: run-vote
+    exec:
+      label: "Run vote"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/vote
+      commandLine: "gunicorn app:app -b 0.0.0.0:5000"
+      group:
+        kind: run
+  - id: run-vote
+    exec:
+      label: "Run result"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}/result
+      commandLine: "node server.js"
+      group:
+        kind: run
+events:
+  postStart:
+    - install-vote-dependencies
+    - install-result-dependencies
+    - install-worker-dependencies
